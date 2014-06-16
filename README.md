@@ -1,2 +1,2 @@
-stillbot-boozeslave
+stillbot-slave
 ===================
