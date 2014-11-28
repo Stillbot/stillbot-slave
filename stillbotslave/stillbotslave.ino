@@ -340,6 +340,19 @@ void EEPROMHandler(int mode, String data) {
 
 void SerialParser(void) {
   char readChar[64];
+
+  /*
+     Strangely enough, this piece of code was never needed until
+     I started communicating to the Arduino via Debian/3.2.0-4-amd64.
+
+     I suspected the culprit was the FTDI driver but was never able to
+     get enough visibility into the workings of it. Instead I cleared this
+     buffer and all then seemed well *shrugs*.
+   */
+  for (int i = 0; i < 64; i++) {
+    readChar[i] = 0;
+  }
+  
   Serial.readBytesUntil(33,readChar,64);
   String read_ = String(readChar);
   //Serial.println(readChar);
@@ -431,7 +444,7 @@ void SerialParser(void) {
 }
 
 void setup()  {
-  Serial.begin(9600); 
+  Serial.begin(115200); 
     while (!Serial) {
     ; // wait for serial port to connect. Needed for Leonardo only
   }
