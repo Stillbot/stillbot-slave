@@ -13,10 +13,30 @@
 #include <EEPROM.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
- 
-#define ONE_WIRE_BUS 10
-OneWire oneWire(ONE_WIRE_BUS);
+#include <PID_v1.h>
+
+#define VERSION_STRING "StillBot-slave-0.1"
+
+#define DEFAULT_BAUDRATE 115200
+#define SSR_PIN 12
+#define DEFAULT_SETPOINT 78.37
+#define DEFAULT_WINDOW_SIZE 2000
+#define DEFAULT_PID_THERMISTOR 0
+#define ONE_WIRE_BUS_PIN 10
+
+OneWire oneWire(ONE_WIRE_BUS_PIN);
 DallasTemperature dt(&oneWire);
+
+double SetPoint = DEFAULT_SETPOINT, Input, Output = DEFAULT_WINDOW_SIZE;
+double agg_Kp = 4, agg_Ki=0.2, agg_Kd=1;           // Aggressive PID settings (< 10C from setpoint)
+double cons_Kp=1, cons_Ki=0.05, cons_Kd=0.25;  // Conservative PID settings
+PID pid(&Input, &Output, &SetPoint, agg_Kp, agg_Ki, agg_Kd, DIRECT);
+unsigned int pid_thermistor_index = DEFAULT_PID_THERMISTOR;
+boolean boiler_on = false;
+boolean pid_on =false;
+int WindowSize = DEFAULT_WINDOW_SIZE;
+unsigned long windowStartTime;
+
 
 SoftwareSerial *sserial = NULL;
 Servo servos[8];
@@ -31,6 +51,13 @@ int Str2int (String Str_value)
   return int_value;
 }
 
+float Str2float(String Str_value)
+{
+  char floatbuf[32]; // make this at least big enough for the whole string
+  Str_value.toCharArray(floatbuf, sizeof(floatbuf));
+  float f = atof(floatbuf);
+}
+
 void split(String results[], int len, String input, char spChar) {
   String temp = input;
   for (int i=0; i<len; i++) {
@@ -41,14 +68,12 @@ void split(String results[], int len, String input, char spChar) {
 }
 
 void Version(){
-  Serial.println("version");
+  Serial.println(VERSION_STRING);
 }
 
-void thermistorTemp(String data) {
-    uint8_t thermistorIndex = (uint8_t)Str2int(data);
+float thermistorTemp(unsigned int thermistorIndex) {
     dt.requestTemperaturesByIndex(thermistorIndex);
-    float temp = dt.getTempCByIndex(thermistorIndex);
-    Serial.println(temp);
+    return dt.getTempCByIndex(thermistorIndex);
 }
 
 uint8_t readCapacitivePin(String data) {
@@ -439,19 +464,116 @@ void SerialParser(void) {
       Serial.println(dt.getDeviceCount());
   }
   else if (cmd == "dstemp") {
-      thermistorTemp(data);
+      Serial.println(thermistorTemp(Str2int(data)));
+  }
+  else if (cmd == "boiler") {
+      if (data == "on") {
+        digitalWrite(SSR_PIN, HIGH);
+        boiler_on = true;
+      } else if (data == "off") {
+        digitalWrite(SSR_PIN, LOW);
+        boiler_on = false;
+      }
+      if (boiler_on == true) {
+          Serial.println("on");
+      } else {
+          Serial.println("off");
+      }
+  }
+  else if (cmd == "pid") {
+  
+    if (data == "on") {
+      if (dt.getDeviceCount() == 0) {
+        Serial.println("NO_THERMISTORS_PRESENT");
+        return;
+      }
+//      pid.SetMode(AUTOMATIC);
+      pid_on = true;
+    } else if (data == "off") {
+//      pid.SetMode(MANUAL);
+      pid_on = false;
+    }
+    if (pid_on == true) {
+//    if (pid.GetMode() == AUTOMATIC) {
+        Serial.println("on");
+    } else {
+        Serial.println("off");
+    }
+  }
+  else if (cmd == "sp") {
+    if (data == "") {
+      Serial.println(SetPoint);
+    } else {
+      int new_sp = Str2int(data);
+      SetPoint = new_sp;
+      Serial.println(SetPoint);
+    }
+  }
+  else if (cmd == "kp") {
+    if (data != "") {
+      pid.SetTunings(Str2float(data), pid.GetKi(), pid.GetKd());
+    }
+    Serial.println(pid.GetKp());
+  }
+  else if (cmd == "ki") {
+    if (data != "") {
+      pid.SetTunings(pid.GetKp(), Str2float(data), pid.GetKd());
+    }
+    Serial.println(pid.GetKi());
+  }
+  else if (cmd == "kd") {
+    if (data != "") {
+      pid.SetTunings(pid.GetKp(), pid.GetKp(), Str2float(data));
+    }
+    Serial.println(pid.GetKd());
   }
 }
 
 void setup()  {
-  Serial.begin(115200); 
+  Serial.begin(DEFAULT_BAUDRATE); 
     while (!Serial) {
     ; // wait for serial port to connect. Needed for Leonardo only
   }
+  
   oneWire.reset();
   dt.begin();
+  if (dt.getDeviceCount() >= DEFAULT_PID_THERMISTOR) {
+    pid_thermistor_index = DEFAULT_PID_THERMISTOR;
+  }
+  
+  pinMode(SSR_PIN, OUTPUT); 
+  
+  windowStartTime = millis();
+  pid.SetOutputLimits(0, WindowSize);  // Tell the PID code to produce an output value in the range 0 - WindowSize
+  pid.SetMode(AUTOMATIC);
 }
 
 void loop() {
-   SerialParser();
+   unsigned long now = millis();
+   Input = thermistorTemp(pid_thermistor_index);
+   double gap = abs(SetPoint - Input); // distance away from setpoint
+   
+   if (gap < 10) {
+     pid.SetTunings(cons_Kp, cons_Ki, cons_Kd);
+   } else {
+     pid.SetTunings(agg_Kp, agg_Ki, agg_Kd);
+   }
+   pid.Compute();
+   
+
+   if (now - windowStartTime > WindowSize) {
+     windowStartTime += WindowSize;
+   }
+   
+   if (pid_on) {
+     if (Output > now - windowStartTime) {
+       digitalWrite(SSR_PIN, HIGH);
+       boiler_on = true;
+     } else {
+       digitalWrite(SSR_PIN, LOW);
+       boiler_on = false;
+     }
+  }
+  
+  SerialParser();
 }
