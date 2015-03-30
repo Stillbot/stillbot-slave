@@ -13,6 +13,7 @@ It oversees and records data for all operations of the plant and is the conduit 
 * controlling actuators such as solid-state relays and solenoid valves
 
 The architectural goals are:
+
 * extensibility: allow for new components to be added easily
 
 * autonomy: operate independently of the stillbot master, with definable failsafe settings
