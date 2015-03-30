@@ -16,4 +16,5 @@ The architectural goals are:
 * extensibility: allow for new components to be added easily
 
 * autonomy: operate independently of the stillbot master, with definable failsafe settings
+
 * modularity: plug'n'play philosophy for components via consistent, ontological hardware/software interfaces
