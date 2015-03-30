@@ -14,5 +14,6 @@ It oversees and records data for all operations of the plant and is the conduit 
 
 The architectural goals are:
 * extensibility: allow for new components to be added easily
+
 * autonomy: operate independently of the stillbot master, with definable failsafe settings
 * modularity: plug'n'play philosophy for components via consistent, ontological hardware/software interfaces
